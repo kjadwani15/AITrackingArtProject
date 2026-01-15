@@ -1,9 +1,15 @@
 # AITrackingArtProject
-To push changes:
-git add . 
-git commit -m "NameOfCommit"
-git push origin main
+to fetch:
 
-To fetch changes: 
-git fetch origin main
-gir reset --hard origin/main
+git fetch origin            
+
+git reset --hard origin/main
+
+
+to push:
+
+git add .
+
+git commit -m "NAME IT HERE"
+
+git push origin main
