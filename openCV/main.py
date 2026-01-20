@@ -12,12 +12,48 @@ import mediapipe as mp
 mp_pose = mp.solutions.pose
 mp_draw = mp.solutions.drawing_utils
 
+sprite = cv2.imread("ball.png", cv2.IMREAD_UNCHANGED)  # must be RGBA
+sprite = cv2.resize(sprite, (100, 100))
+sh, sw = sprite.shape[:2]
+
 cap = cv2.VideoCapture(0)
 
 x1 = 100
 y1 = 100
 x2 = 200
 y2 = 200
+
+def draw_sprite(bg, sprite, x, y):
+    h, w = sprite.shape[:2]
+    frame_h, frame_w = bg.shape[:2]
+
+    # Clip region to screen
+    x1 = max(0, x)
+    y1 = max(0, y)
+    x2 = min(x + w, frame_w)
+    y2 = min(y + h, frame_h)
+
+    sprite_x1 = x1 - x
+    sprite_y1 = y1 - y
+    sprite_x2 = sprite_x1 + (x2 - x1)
+    sprite_y2 = sprite_y1 + (y2 - y1)
+
+    if x1 >= x2 or y1 >= y2:
+        return bg
+
+    roi = bg[y1:y2, x1:x2]
+    sprite_crop = sprite[sprite_y1:sprite_y2, sprite_x1:sprite_x2]
+
+    alpha = sprite_crop[:, :, 2] / 255.0
+    overlay = sprite_crop[:, :, :3]
+
+    for c in range(3):
+        roi[:, :, c] = (alpha * overlay[:, :, c] +
+                        (1 - alpha) * roi[:, :, c])
+
+    bg[y1:y2, x1:x2] = roi
+    return bg
+
 
 
 with mp_pose.Pose(
@@ -45,7 +81,6 @@ with mp_pose.Pose(
         left_hand = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST]
         right_x = int(right_hand.x * frame.shape[1])
         right_y = int(right_hand.y * frame.shape[0])
-        # This is the place to implement the ball's picture
         left_x = int(left_hand.x * frame.shape[1])
         left_y = int(left_hand.y * frame.shape[0])
 
@@ -62,33 +97,12 @@ with mp_pose.Pose(
             y1 -= 10
             y2 -= 10
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        frame = draw_sprite(frame, sprite, x1, y1)
+
         cv2.imshow("Pose Tracking", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
 cap.release()
 cv2.destroyAllWindows()
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # Run tracking on the frame
-    results = model.track(frame, persist=True)
-
-    # Draw results on the frame
-    annotated_frame = results[0].plot()
-
-
-    # Show the frame
-    cv2.imshow("YOLO Tracking Test", annotated_frame)
-
-    # Press 'q' to quit
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
-# This test script captures video from the webcam, applies YOLOv8 tracking,
