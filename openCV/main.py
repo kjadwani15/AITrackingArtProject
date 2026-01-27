@@ -3,6 +3,7 @@ from ultralytics import YOLO
 import mediapipe as mp
 import math
 import time
+import pygame
 
 model = YOLO("yolov8n.pt")
 cap = cv2.VideoCapture(0)
@@ -12,6 +13,8 @@ screenWidth = 1280
 
 pokemon = None
 
+pokemOn = False
+
 pokeballopened = False
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, screenWidth)
@@ -19,6 +22,10 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, screenHeight)
 
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
+
+pygame.mixer.init()
+backgroundMusic = pygame.mixer.Sound("background_music.mp3")
+pop = pygame.mixer.Sound("ball-hit-pokemon.mp3")
 
 sprite = cv2.imread("pokeball.png", cv2.IMREAD_UNCHANGED)
 sprite = cv2.resize(sprite, (100, 100))
@@ -35,9 +42,9 @@ gy2 = gy1 + gh
 pokemon = cv2.imread("squirtle.png", cv2.IMREAD_UNCHANGED)
 pokemon = cv2.resize(pokemon, (150, 150))
 ph, pw = pokemon.shape[:2]
-px1 = 500
+px1 = gx1 + 75
 px2 = px1 + pw
-py1 = 300
+py1 = gy1 - ph
 py2 = py1 + ph
 pokemon[:, :, 3] = 0
 
@@ -48,6 +55,7 @@ grabbing = False
 prev_pinch = None
 vx, vy = 0, 0
 damping = 0.95
+distp = 5.0
 
 
 def draw_sprite(bg, sprite, x, y):
@@ -70,7 +78,7 @@ def draw_sprite(bg, sprite, x, y):
     roi = bg[y1:y2, x1:x2]
     sprite_crop = sprite[sprite_y1:sprite_y2, sprite_x1:sprite_x2]
 
-    alpha = sprite_crop[:, :, 2] / 255.0
+    alpha = sprite_crop[:, :, 3] / 255.0
     overlay = sprite_crop[:, :, :3]
 
     for c in range(3):
@@ -133,6 +141,7 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                         sprite = cv2.imread("open_pokeball.png", cv2.IMREAD_UNCHANGED)
                         sprite = cv2.resize(sprite, (100, 100))
                         pokeballopened = True
+                        pop.play()
                         current_time = time.time()
                         vx = 0
                         vy = 0
@@ -141,8 +150,9 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                     sprite = cv2.imread("pokeball.png", cv2.IMREAD_UNCHANGED)
                     sprite = cv2.resize(sprite, (100, 100))
                     pokeballopened = False
+                    pokemOn = False
 
-                if dist < 0.05:   # pinching
+                if dist < 0.1:   # pinching
                     grabbing = True
                 else:
                     grabbing = False
@@ -156,9 +166,17 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                             y2 = y1 + sh
 
 
+        # Music
+        if backgroundMusic.get_num_channels() == 0:
+            backgroundMusic.play()
+
+
+        #Spawning Pokemon when pinching your thumb and pinky over the grass
+        if distp < 0.1 and pinchp_x > gx1 and pinchp_x < gx2 and pinchp_y > gy1 and pinchp_y < gy2:
+            pokemOn = True
 
         frame = draw_sprite(frame, grass, gx1, gy1)
-        if distp < 0.05 and pinchp_x > px1 and pinchp_x < px2 and pinchp_y > py1 and pinchp_y < py2:
+        if pokemOn:
             pokemon[:, :, 3] = 255
             frame = draw_sprite(frame, pokemon, px1, py1)
         frame = draw_sprite(frame, sprite, x1, y1)
