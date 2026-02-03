@@ -4,6 +4,7 @@ import math
 import time
 import pygame
 import random
+import numpy as np
 from Pokemon import Pokemon
 
 
@@ -53,8 +54,10 @@ pokemon_list = [
 
 current_pokemon = random.choice(pokemon_list)
 
-x1, y1 = 100, 100
-x2, y2 = 200, 200
+initial_x1, initial_y1 = 400, 400
+initial_x2, initial_y2 = 500, 500
+x1, y1 = initial_x1, initial_y1
+x2, y2 = initial_x2, initial_y2
 grabbing = False
 prev_pinch = None
 vx, vy = 0, 0
@@ -98,13 +101,32 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
         frame = cv2.flip(frame, 1)
         if not ret:
             break
+        original_frame = frame.copy()
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # background blur / dim GaussianBlur(x,y) controls blur amount and addWeighted(frame,x,blurred,y,z) controls dim amount. In particular, x.
+        blurred = cv2.GaussianBlur(frame, (31, 31), 0)
+        frame = cv2.addWeighted(frame, 0.10, blurred, 0.10, 0)
+
+
+        rgb = cv2.cvtColor(original_frame, cv2.COLOR_BGR2RGB)
         results = hands.process(rgb)
 
         if results.multi_hand_landmarks:
+            hand_mask = np.zeros_like(frame)
+
             for hand_landmarks in results.multi_hand_landmarks:
+
                 mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+                h, w, _ = frame.shape
+                points = [
+                    (int(lm.x * w), int(lm.y * h))
+                    for lm in hand_landmarks.landmark
+                ]
+
+                hull = cv2.convexHull(np.array(points, dtype=np.int32))
+                cv2.fillConvexPoly(hand_mask, hull, (255, 255, 255))
+
 
                 thumb = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
                 index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
@@ -125,24 +147,37 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                 pinchp_y = int((thumb.y + pinky.y) * 0.5 * frame.shape[0])
 
 
-                if dist < 0.1:
+                if dist < 0.05:
                     grabbing = True
                 else:
                     grabbing = False
 
                 if grabbing:
-                    if prev_pinch is not None:
+
+                    touching_ball = (x1 - 20 < pinch_x < x2 + 20 and y1 - 20 < pinch_y < y2 + 20)
+
+                    if touching_ball and prev_pinch is not None:
                         vx = pinch_x - prev_pinch[0]
                         vy = pinch_y - prev_pinch[1]
-                    prev_pinch = (pinch_x, pinch_y)
 
-                    if pinch_x > x1 - 20 and pinch_x < x2 + 20 and pinch_y > y1 - 20 and pinch_y < y2 + 20:
+                    if touching_ball:
                         x1 = pinch_x - sw // 2
                         y1 = pinch_y - sh // 2
                         x2 = x1 + sw
                         y2 = y1 + sh
+                        prev_pinch = (pinch_x, pinch_y)
+
                 else:
                     prev_pinch = None
+            # --- restore sharp hands over blurred background ---
+            mask = cv2.cvtColor(hand_mask.astype('uint8'), cv2.COLOR_BGR2GRAY)
+            _, mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY)
+            inv_mask = cv2.bitwise_not(mask)
+            background = cv2.bitwise_and(frame, frame, mask=inv_mask)
+            hand_region = cv2.bitwise_and(original_frame, original_frame, mask=mask)
+            frame = cv2.add(background, hand_region)
+            # --------------------------------------------------
+
 
         if not grabbing and x1 + vx >= 0 and x2 + vx <= screenWidth and y1 + vy >= 0 and y2 + vy <= screenHeight:
             x1 += int(vx)
@@ -164,12 +199,14 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                 current_time = time.time()
 
             if time.time() - current_time > 2.0 and pokeballopened:
-                current_time = time.time()
                 pokeballopened = False
                 sprite = cv2.imread("images/pokeball.png", cv2.IMREAD_UNCHANGED)
                 sprite = cv2.resize(sprite, (100, 100))
                 pokemOn = False
                 current_pokemon = random.choice(pokemon_list)
+                x1, y1 = initial_x1, initial_y1
+                x2, y2 = initial_x2, initial_y2
+
 
 
         if backgroundMusic.get_num_channels() == 0:
